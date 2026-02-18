@@ -5,3 +5,5 @@ bin/
 *.dylib
 *.test
 *.out
+web/game.wasm
+web/wasm_exec.js

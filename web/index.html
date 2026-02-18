@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Go Minesweeper (Web)</title>
+  <style>
+    html, body { margin:0; padding:0; background:#1b1d22; color:#e6e6e6; font-family:system-ui,sans-serif; }
+    .wrap { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; }
+    canvas { border:1px solid #333; image-rendering: pixelated; touch-action: manipulation; }
+    .hint { font-size:13px; opacity:.85; text-align:center; line-height:1.4; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="status">Loading...</div>
+    <div class="hint">터치: 탭=열기 / 길게누르기=깃발</div>
+  </div>
+
+  <script src="wasm_exec.js"></script>
+  <script>
+    const go = new Go();
+    WebAssembly.instantiateStreaming(fetch("game.wasm"), go.importObject)
+      .then((result) => {
+        document.getElementById("status").textContent = "Running";
+        go.run(result.instance);
+      })
+      .catch((err) => {
+        document.getElementById("status").textContent = "Failed to load";
+        console.error(err);
+      });
+  </script>
+</body>
+</html>

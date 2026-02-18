@@ -29,7 +29,28 @@ go run .
 go build -o minesweeper.exe .
 ```
 
-## 조작 키
+## 웹(폰 브라우저 포함) 실행
+
+### 1) WebAssembly 빌드
+
+```powershell
+./build-web.ps1
+```
+
+### 2) 정적 서버 실행
+
+```bash
+python -m http.server 8080 -d web
+```
+
+### 3) 접속
+- PC: `http://localhost:8080`
+- 폰: `http://<PC의_로컬_IP>:8080`
+  - PC/폰이 같은 Wi-Fi에 있어야 합니다.
+
+> 외부 네트워크에서 접속하려면 HTTPS 호스팅(Vercel/Netlify/GitHub Pages 등) 권장
+
+## 조작 키 / 터치
 
 - `N`: 새 게임
 - `1`/`2`/`3`: 초급/중급/고급
@@ -40,6 +61,9 @@ go build -o minesweeper.exe .
 - `S`: 최고기록 보기
 - `Q`: 물음표 마킹 사용 on/off
 - `F1`: 도움말
+- 터치(모바일/웹):
+  - **탭**: 열기 / 코드(chord)
+  - **길게 누르기(약 0.36초)**: 깃발/물음표 마킹
 
 ## 커스텀 설정 (C)
 

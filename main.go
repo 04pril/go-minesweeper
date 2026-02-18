@@ -22,9 +22,11 @@ import (
 )
 
 const (
-	cellSize       = 24
-	outerPadding   = 12
-	topPanelHeight = 68
+	cellSize          = 24
+	outerPadding      = 12
+	topPanelHeight    = 68
+	touchMoveSlopPx   = 10
+	touchLongPressDur = 360 * time.Millisecond
 )
 
 type gameState int
@@ -327,6 +329,11 @@ func (b *board) findSafeHint() (int, int, bool) {
 
 type point struct{ X, Y int }
 
+type touchStart struct {
+	X, Y int
+	At   time.Time
+}
+
 type theme struct {
 	Name           string
 	BG             color.Color
@@ -423,6 +430,7 @@ type game struct {
 	bestScores     map[string]int
 	faceRect       image.Rectangle
 	fontMain       font.Face
+	touchStarts    map[ebiten.TouchID]touchStart
 }
 
 func newGame() *game {
@@ -432,6 +440,7 @@ func newGame() *game {
 		allowQuestion: true,
 		fontMain:      basicfont.Face7x13,
 		bestScores:    loadScores(),
+		touchStarts:   map[ebiten.TouchID]touchStart{},
 	}
 	g.b = newBoard(g.diff.W, g.diff.H, g.diff.Mines)
 	g.custom = customConfig{W: 24, H: 20, Mines: 99, field: 0}
@@ -502,6 +511,104 @@ func (g *game) boardPosFromCursor(mx, my int) (int, int, bool) {
 		return 0, 0, false
 	}
 	return x, y, true
+}
+
+func (g *game) handleRevealAt(mx, my int) bool {
+	if pointInRect(mx, my, g.faceRect) {
+		g.reset(false)
+		return true
+	}
+
+	if g.showHelp {
+		g.showHelp = false
+		return true
+	}
+	if g.showScores {
+		g.showScores = false
+		return true
+	}
+
+	if g.paused || g.state != statePlaying {
+		return false
+	}
+
+	x, y, ok := g.boardPosFromCursor(mx, my)
+	if !ok {
+		return false
+	}
+
+	var hit, changed bool
+	if g.b.cells[y][x].Revealed {
+		hit, changed = g.b.chord(x, y)
+	} else {
+		hit, changed = g.b.reveal(x, y)
+	}
+
+	if changed && g.timerStart.IsZero() && g.b.placed {
+		g.timerStart = time.Now()
+	}
+	if changed {
+		g.hint = nil
+	}
+
+	if hit {
+		g.state = stateLost
+		g.b.revealAllMines()
+		return true
+	}
+	if g.b.isWin() {
+		g.onGameWon()
+	}
+	return changed
+}
+
+func (g *game) handleMarkAt(mx, my int) bool {
+	if g.paused || g.state != statePlaying || g.showHelp || g.showScores {
+		return false
+	}
+	x, y, ok := g.boardPosFromCursor(mx, my)
+	if !ok {
+		return false
+	}
+	if g.b.toggleMark(x, y, g.allowQuestion) {
+		g.hint = nil
+		return true
+	}
+	return false
+}
+
+func (g *game) handleTouchInput() {
+	for _, id := range inpututil.AppendJustPressedTouchIDs(nil) {
+		x, y := ebiten.TouchPosition(id)
+		g.touchStarts[id] = touchStart{X: x, Y: y, At: time.Now()}
+	}
+
+	for _, id := range inpututil.AppendJustReleasedTouchIDs(nil) {
+		st, ok := g.touchStarts[id]
+		if !ok {
+			continue
+		}
+		delete(g.touchStarts, id)
+
+		x, y := ebiten.TouchPosition(id)
+		dx := x - st.X
+		if dx < 0 {
+			dx = -dx
+		}
+		dy := y - st.Y
+		if dy < 0 {
+			dy = -dy
+		}
+		if dx > touchMoveSlopPx || dy > touchMoveSlopPx {
+			continue
+		}
+
+		if time.Since(st.At) >= touchLongPressDur {
+			g.handleMarkAt(st.X, st.Y)
+			continue
+		}
+		g.handleRevealAt(st.X, st.Y)
+	}
 }
 
 func (g *game) handleGlobalKeys() {
@@ -628,66 +735,14 @@ func (g *game) Update() error {
 	mx, my := ebiten.CursorPosition()
 
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-		if pointInRect(mx, my, g.faceRect) {
-			g.reset(false)
-			return nil
-		}
-
-		if g.showHelp {
-			g.showHelp = false
-			return nil
-		}
-		if g.showScores {
-			g.showScores = false
-			return nil
-		}
-
-		if g.paused || g.state != statePlaying {
-			return nil
-		}
-
-		x, y, ok := g.boardPosFromCursor(mx, my)
-		if !ok {
-			return nil
-		}
-
-		var hit, changed bool
-		if g.b.cells[y][x].Revealed {
-			hit, changed = g.b.chord(x, y)
-		} else {
-			hit, changed = g.b.reveal(x, y)
-		}
-
-		if changed && g.timerStart.IsZero() && g.b.placed {
-			g.timerStart = time.Now()
-		}
-		if changed {
-			g.hint = nil
-		}
-
-		if hit {
-			g.state = stateLost
-			g.b.revealAllMines()
-			return nil
-		}
-		if g.b.isWin() {
-			g.onGameWon()
-		}
+		g.handleRevealAt(mx, my)
 	}
 
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
-		if g.paused || g.state != statePlaying || g.showHelp || g.showScores {
-			return nil
-		}
-		x, y, ok := g.boardPosFromCursor(mx, my)
-		if !ok {
-			return nil
-		}
-		if g.b.toggleMark(x, y, g.allowQuestion) {
-			g.hint = nil
-		}
+		g.handleMarkAt(mx, my)
 	}
 
+	g.handleTouchInput()
 	return nil
 }
 
@@ -750,6 +805,7 @@ func (g *game) Draw(screen *ebiten.Image) {
 			"N: New game | 1/2/3: Beginner/Intermediate/Expert",
 			"C: Custom board | Enter: Apply custom",
 			"Left click: Reveal / Chord | Right click: Flag/?",
+			"Touch: tap = reveal/chord | long-press = flag/?",
 			"H: Hint | P: Pause | T: Theme | S: Scores | Q: Toggle ? marks",
 			"F1: Toggle Help | Click smiley to restart",
 		}
