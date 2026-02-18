@@ -430,6 +430,8 @@ type game struct {
 	elapsedSeconds int
 	bestScores     map[string]int
 	faceRect       image.Rectangle
+	touchModeRect  image.Rectangle
+	touchFlagMode  bool
 	fontMain       font.Face
 	touchStarts    map[ebiten.TouchID]touchStart
 }
@@ -514,7 +516,33 @@ func (g *game) boardPosFromCursor(mx, my int) (int, int, bool) {
 	return x, y, true
 }
 
+func (g *game) normalizeInputPos(x, y int) (int, int) {
+	lw, lh := g.Layout(0, 0)
+	if x >= 0 && y >= 0 && x < lw && y < lh {
+		return x, y
+	}
+	dsf := ebiten.DeviceScaleFactor()
+	if dsf <= 1.01 {
+		return x, y
+	}
+	sx := int(float64(x) / dsf)
+	sy := int(float64(y) / dsf)
+	return sx, sy
+}
+
+func (g *game) toggleTouchModeAt(mx, my int) bool {
+	if pointInRect(mx, my, g.touchModeRect) {
+		g.touchFlagMode = !g.touchFlagMode
+		return true
+	}
+	return false
+}
+
 func (g *game) handleRevealAt(mx, my int) bool {
+	mx, my = g.normalizeInputPos(mx, my)
+	if g.toggleTouchModeAt(mx, my) {
+		return true
+	}
 	if pointInRect(mx, my, g.faceRect) {
 		g.reset(false)
 		return true
@@ -564,6 +592,10 @@ func (g *game) handleRevealAt(mx, my int) bool {
 }
 
 func (g *game) handleMarkAt(mx, my int) bool {
+	mx, my = g.normalizeInputPos(mx, my)
+	if g.toggleTouchModeAt(mx, my) {
+		return true
+	}
 	if g.paused || g.state != statePlaying || g.showHelp || g.showScores {
 		return false
 	}
@@ -609,6 +641,10 @@ func (g *game) handleTouchInput() {
 		}
 
 		if time.Since(st.At) >= touchLongPressDur {
+			g.handleMarkAt(st.LastX, st.LastY)
+			continue
+		}
+		if g.touchFlagMode {
 			g.handleMarkAt(st.LastX, st.LastY)
 			continue
 		}
@@ -787,6 +823,17 @@ func (g *game) Draw(screen *ebiten.Image) {
 	}
 	drawTextCentered(screen, face, g.fontMain, faceX, faceY+6, faceSize, th.HeaderText)
 
+	// touch mode toggle (especially useful on mobile browsers)
+	tw, thh := 62, 18
+	tx, ty := windowW-outerPadding-tw, 2
+	g.touchModeRect = image.Rect(tx, ty, tx+tw, ty+thh)
+	drawRaisedRect(screen, tx, ty, tw, thh, th)
+	touchLabel := "T:OPEN"
+	if g.touchFlagMode {
+		touchLabel = "T:FLAG"
+	}
+	drawTextCentered(screen, touchLabel, basicfont.Face7x13, tx, ty+3, tw, th.HeaderText)
+
 	// board frame
 	boardX, boardY := outerPadding, topPanelHeight
 	bw := g.b.W * cellSize
@@ -810,7 +857,8 @@ func (g *game) Draw(screen *ebiten.Image) {
 			"N: New game | 1/2/3: Beginner/Intermediate/Expert",
 			"C: Custom board | Enter: Apply custom",
 			"Left click: Reveal / Chord | Right click: Flag/?",
-			"Touch: tap = reveal/chord | long-press = flag/?",
+			"Touch: tap = current mode action | long-press = flag/?",
+			"Top-right T:OPEN/T:FLAG 버튼으로 터치 모드 전환",
 			"H: Hint | P: Pause | T: Theme | S: Scores | Q: Toggle ? marks",
 			"F1: Toggle Help | Click smiley to restart",
 		}
