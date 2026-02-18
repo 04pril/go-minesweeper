@@ -330,8 +330,9 @@ func (b *board) findSafeHint() (int, int, bool) {
 type point struct{ X, Y int }
 
 type touchStart struct {
-	X, Y int
-	At   time.Time
+	X, Y         int
+	LastX, LastY int
+	At           time.Time
 }
 
 type theme struct {
@@ -578,9 +579,20 @@ func (g *game) handleMarkAt(mx, my int) bool {
 }
 
 func (g *game) handleTouchInput() {
+	for _, id := range ebiten.TouchIDs() {
+		x, y := ebiten.TouchPosition(id)
+		st, ok := g.touchStarts[id]
+		if !ok {
+			g.touchStarts[id] = touchStart{X: x, Y: y, LastX: x, LastY: y, At: time.Now()}
+			continue
+		}
+		st.LastX, st.LastY = x, y
+		g.touchStarts[id] = st
+	}
+
 	for _, id := range inpututil.AppendJustPressedTouchIDs(nil) {
 		x, y := ebiten.TouchPosition(id)
-		g.touchStarts[id] = touchStart{X: x, Y: y, At: time.Now()}
+		g.touchStarts[id] = touchStart{X: x, Y: y, LastX: x, LastY: y, At: time.Now()}
 	}
 
 	for _, id := range inpututil.AppendJustReleasedTouchIDs(nil) {
@@ -590,24 +602,17 @@ func (g *game) handleTouchInput() {
 		}
 		delete(g.touchStarts, id)
 
-		x, y := ebiten.TouchPosition(id)
-		dx := x - st.X
-		if dx < 0 {
-			dx = -dx
-		}
-		dy := y - st.Y
-		if dy < 0 {
-			dy = -dy
-		}
+		dx := absInt(st.LastX - st.X)
+		dy := absInt(st.LastY - st.Y)
 		if dx > touchMoveSlopPx || dy > touchMoveSlopPx {
 			continue
 		}
 
 		if time.Since(st.At) >= touchLongPressDur {
-			g.handleMarkAt(st.X, st.Y)
+			g.handleMarkAt(st.LastX, st.LastY)
 			continue
 		}
-		g.handleRevealAt(st.X, st.Y)
+		g.handleRevealAt(st.LastX, st.LastY)
 	}
 }
 
@@ -1055,6 +1060,13 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func absInt(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func clamp(v, lo, hi int) int {
