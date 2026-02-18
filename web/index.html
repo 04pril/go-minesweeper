@@ -5,30 +5,74 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <title>Go Minesweeper (Web)</title>
   <style>
-    html, body { margin:0; padding:0; background:#1b1d22; color:#e6e6e6; font-family:system-ui,sans-serif; }
-    .wrap { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; }
-    canvas { border:1px solid #333; image-rendering: pixelated; touch-action: manipulation; }
-    .hint { font-size:13px; opacity:.85; text-align:center; line-height:1.4; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      background: #000;
+      overflow: hidden;
+      font-family: system-ui, sans-serif;
+    }
+    #overlay {
+      position: fixed;
+      left: 10px;
+      top: 10px;
+      z-index: 9999;
+      pointer-events: none;
+      color: #e6e6e6;
+      font-size: 13px;
+      line-height: 1.35;
+      text-shadow: 0 1px 2px rgba(0,0,0,.7);
+      background: rgba(0,0,0,.28);
+      border-radius: 6px;
+      padding: 6px 8px;
+    }
+    canvas {
+      image-rendering: pixelated;
+      touch-action: manipulation;
+    }
   </style>
 </head>
 <body>
-  <div class="wrap">
+  <div id="overlay">
     <div id="status">Loading...</div>
-    <div class="hint">터치: 탭=열기 / 길게누르기=깃발</div>
+    <div>터치: 탭=열기 / 길게누르기=깃발</div>
   </div>
 
   <script src="wasm_exec.js"></script>
   <script>
     const go = new Go();
-    WebAssembly.instantiateStreaming(fetch("game.wasm"), go.importObject)
-      .then((result) => {
-        document.getElementById("status").textContent = "Running";
-        go.run(result.instance);
-      })
-      .catch((err) => {
-        document.getElementById("status").textContent = "Failed to load";
-        console.error(err);
-      });
+
+    function setStatus(text) {
+      const el = document.getElementById("status");
+      if (el) el.textContent = text;
+    }
+
+    async function loadWasm() {
+      const response = await fetch("game.wasm");
+      let result;
+
+      if (WebAssembly.instantiateStreaming) {
+        try {
+          result = await WebAssembly.instantiateStreaming(response, go.importObject);
+        } catch (e) {
+          const bytes = await response.arrayBuffer();
+          result = await WebAssembly.instantiate(bytes, go.importObject);
+        }
+      } else {
+        const bytes = await response.arrayBuffer();
+        result = await WebAssembly.instantiate(bytes, go.importObject);
+      }
+
+      setStatus("Running");
+      await go.run(result.instance);
+    }
+
+    loadWasm().catch((err) => {
+      setStatus("Failed to load (console 확인)");
+      console.error(err);
+    });
   </script>
 </body>
 </html>
